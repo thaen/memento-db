@@ -17,6 +17,16 @@ assert HEADER.size == 9
 
 FLAG_TOMBSTONE = 0x01
 
+from threading import Lock
+
+from collections import namedtuple
+Record = namedtuple('Record', ['flags', 'klen', 'vlen', 'keybytes', 'valbytes'])
+
+DEBUG = False
+def pml(msg):
+    # pml: poor man's log
+    if DEBUG:
+        print(msg)
 
 class LogStore(KVStore):
     """A durable KVStore backed by an append-only log on an injected Disk.
@@ -30,6 +40,13 @@ class LogStore(KVStore):
         self.disk = disk
         self.fsync_on_write = fsync_on_write
         self.index: dict[bytes, int] = {}
+
+        self.write_lock = Lock()
+
+    @property
+    def _bytesize(self):
+        return self.disk.size() # i'm not sure this is correct for a real disk
+        # return sum(v for _, v in self.index.items())
 
     @classmethod
     def open(cls, disk: Disk, *, fsync_on_write: bool = True) -> "LogStore":
@@ -64,9 +81,54 @@ class LogStore(KVStore):
         Do NOT update self.index here — put()/delete() own that.
         """
         # === YOUR CODE (Exercise 1.1) ===
-        raise NotImplementedError
+        # 1. take a write lock on the log
+        with self.write_lock:
+            # 2. manifest the bytes to be written by calling encode()
+            pml(f'writing {key} {value} {tombstone}')
+            bytes_to_write = self.encode(key, value, tombstone=tombstone)
+            location_to_write = self._bytesize
+            # 3. write
+            pml(f' . to location {location_to_write} {bytes_to_write}')
+            self.disk.write(location_to_write, bytes_to_write)
+            # fsync if necessary (TODO: what are the failure modes here? fsync fails but write succeeds?)
+            if self.fsync_on_write:
+                self.disk.fsync()
+        
+            # 4. return the offset
+            return location_to_write
         # === END ===
 
+    def _record_from_disk_offset(self, offset: int) -> Record:
+        pml(f'read record at offset {offset}')
+        headerbytes = self.disk.read(offset, HEADER.size)
+
+        pml(f'  got {headerbytes}')
+        if not headerbytes or len(headerbytes) != HEADER.size:
+            # record header not constructible, or truncation problem, no readable record.
+            # TODO truncate the file, return None
+            self.disk.truncate(offset)
+            return None
+
+        header = HEADER.unpack(headerbytes)
+        (flags, klen, vlen) = header
+        
+        pml(f' read header: {flags} {klen} {vlen}; will read key then value')
+        keybytes = self.disk.read(offset + HEADER.size, klen)
+        pml(f'  read keybytes: {keybytes}')
+        if len(keybytes) != klen:
+            # TODO truncate the file, return None
+            self.disk.truncate(offset)
+            return None
+        
+        valbytes = self.disk.read(offset + HEADER.size + klen, vlen)
+        pml(f'  read valbytes: {valbytes}')
+        if len(valbytes) != vlen:
+            # TODO truncate the file, return None
+            self.disk.truncate(offset)
+            return None
+        
+        return Record(flags, klen, vlen, keybytes, valbytes)
+        
     def rebuild_index(self) -> None:
         """Scan the whole file front-to-back and rebuild self.index.
 
@@ -76,16 +138,37 @@ class LogStore(KVStore):
         """
         self.index = {}
         # === YOUR CODE (Exercise 1.2) ===
-        raise NotImplementedError
-        # === END ===
+        curoffset = 0
+        pml("rebuilding index")
+
+        record = self._record_from_disk_offset(curoffset)
+        while record:
+            # index maps key bytes to the offset where we read the HEADER
+            pml(f'  update index {record.keybytes}: {curoffset}')
+            self.index[record.keybytes] = curoffset
+                    
+            curoffset += self.record_len(record.klen, record.vlen)
+            pml(f'  new offset: {curoffset}')
+            record = self._record_from_disk_offset(curoffset)
+                
+        pml('done building idx')
 
     # ---- KVStore interface -------------------------------------------------
 
     def get(self, key: bytes) -> Optional[bytes]:
         """Return the latest value for key, or None if absent/tombstoned."""
         # === YOUR CODE (Exercise 1.3) ===
-        raise NotImplementedError
-        # === END ===
+        pml(f' getting {key}. cur idx: {self.index}')
+        if key not in self.index or self.index[key] == b'':
+            return None
+        record = self._record_from_disk_offset(self.index[key])
+        if not record:
+            return None
+
+        if record.flags & FLAG_TOMBSTONE != 0:
+            return None        
+
+        return record.valbytes
 
     def put(self, key: bytes, value: bytes) -> None:
         offset = self.append(key, value, tombstone=False)
