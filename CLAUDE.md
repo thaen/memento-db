@@ -39,6 +39,32 @@ precise, Socratic, never doing the user's thinking for them.
   fill it in and move on. If a design call turns out to carry real DB learning,
   add it to the curriculum.
 
+## Build process (set by the user — applies from L3 onward; L0–L2 predate it)
+
+1. **Claude writes the tests; the user writes the code.** From L3 on, Claude
+   authors the test suite for each lesson (the user no longer writes oracles).
+   **Verify the tests with a QAE-persona subagent** before handing them over: spawn
+   a subagent acting as a Quality Assurance Engineer to check that the tests
+   actually pin the contract Claude expects the user to implement — right
+   behaviors, edge cases, no tautologies, no coupling to one particular
+   implementation. The user then turns the suite green.
+2. **Minimal scaffolding.** Leave as much load-bearing code to the user as is
+   reasonable — including small helpers, not just the headline function. (Example
+   the user gave: in L2.1 they'd have preferred to implement `_load_index`,
+   `encode_record`, and `decode_record_at` themselves, rather than receive them
+   pre-written.) Scaffold the harness/glue; hand over anything with a real concept
+   in it. When unsure, give the user *more* to implement, not less.
+3. **Reuse previous steps wherever possible.** Build incrementally, as if building
+   one real system over time. Each new lesson should lean on what's already there
+   and be motivated by a concrete *shortcoming* of the previous iteration — the
+   user should feel the limit before the fix (e.g. L2.2's red crash test motivates
+   L2.3's WAL). Don't pre-empt a motivation by building its solution early.
+4. **Small-ish steps.** Prefer a small step even if it leaves the system
+   temporarily non-functional, or doesn't fully replace the thing it improves on.
+   A throwaway intermediate (e.g. a no-WAL `_apply` that L2.3 rewrites) is fine and
+   often pedagogically *better* than jumping straight to the final design — the
+   rewrite is where the motivation lands.
+
 ## The design spine (the through-line of the whole course)
 
 Production code never calls the OS directly — not `time.*`, `random.*`, `threading`,
@@ -85,15 +111,18 @@ untouched.)
   (each green before the next, red-test-first; the original all-at-once L2 scaffold
   was deleted). Lessons in the vault: `L2.1-sstable.md`, `L2.2-memtable-flush-merge.md`,
   `L2.3-wal-durability.md`.
-  - **L2.1 — SSTable (standalone): NEXT.** `sstable.py` scaffold in place; the two
-    blanks (`SSTableWriter.write_all`, `SSTableReader.get`) are the user's. The user
-    writes `tests/test_sstable.py` FIRST — a *counted-metric* test (sparse index
-    resolves N keys with ≪ N resident entries) plus edge cases (single-record table,
-    binary-search underflow). No engine/WAL yet.
-  - **L2.2 — memtable + flush + merged read (no durability):** future. Adds
-    `lsmstore.py` (engine over `sstable.py`), a Disk read-counter in `harness.py`
-    (Claude's plumbing — count read-amplification), and ends on a deliberate red
-    crash test. Provenance tests pin *which* sub-piece answered.
-  - **L2.3 — WAL durability:** future. L1's log demoted to a durability buffer:
-    WAL-first ordering, tombstone-preserving replay (don't resurrect deletes),
-    truncate-on-flush.
+  - **L2.1 — SSTable (standalone): DONE.** `sstable.py` (`write_all` +
+    sparse-index binary-search `get`) and `tests/test_sstable.py`, 10/10 green.
+    Added `CountingDisk` to `harness.py` (counts reads/bytes/offsets; works over
+    SimDisk or RealDisk) — the read-amplification counter, reused from here on.
+  - **L2.2 — memtable + flush + merged read (no durability): NEXT.** `lsmstore.py`
+    scaffold in place (engine over `sstable.py`, **no WAL** — deliberate). User's
+    two blanks: `LSMStore.get` (newest→oldest merge, tombstone shadowing) and
+    `LSMStore.flush` (freeze sorted memtable → new SSTable). `tests/test_engine.py`
+    written by Claude: functional, provenance (which sub-piece answered),
+    read-amp metric (runs probed per get), and two `xfail` crash cliffhangers that
+    L2.3 will turn green. 8 red on the blanks, 2 xfailed.
+  - **L2.3 — WAL durability:** future. Re-introduce L1's log here as a write-ahead
+    log: WAL-first `_apply`, replay-into-memtable on open (tombstone-preserving — no
+    resurrect), truncate-on-flush. Flips the two L2.2 `xfail` tests to pass (then
+    drop their markers).
