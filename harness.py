@@ -11,6 +11,7 @@ import abc
 import heapq
 import os
 import time
+from dataclasses import dataclass, field
 from typing import Callable, Iterator, Protocol, runtime_checkable
 
 
@@ -183,6 +184,60 @@ class SimDisk:
 
     def close(self) -> None:
         return None
+
+
+@dataclass
+class DiskStats:
+    """I/O tally for one CountingDisk. Reset between measurements."""
+    reads: int = 0
+    read_bytes: int = 0
+    read_offsets: list[int] = field(default_factory=list)  # offset of each read()
+    writes: int = 0
+    write_bytes: int = 0
+    fsyncs: int = 0
+
+
+class CountingDisk:
+    """Wraps ANY Disk and tallies its I/O, then delegates. Conforms to the Disk
+    protocol, so it drops in wherever a Disk is expected -- SimDisk or RealDisk.
+
+    Use it in tests to assert on *access patterns*, which functional assertions
+    can't see: that a point read touches a bounded slice near the target instead
+    of scanning the whole file (L2.1), or how many runs a get probes (L2.2's read
+    amplification). Call `reset()` right before the operation you want to measure.
+    """
+
+    def __init__(self, inner: Disk) -> None:
+        self._inner = inner
+        self.stats = DiskStats()
+
+    def reset(self) -> None:
+        self.stats = DiskStats()
+
+    def read(self, offset: int, length: int) -> bytes:
+        data = self._inner.read(offset, length)
+        self.stats.reads += 1
+        self.stats.read_bytes += len(data)
+        self.stats.read_offsets.append(offset)
+        return data
+
+    def write(self, offset: int, data: bytes) -> None:
+        self._inner.write(offset, data)
+        self.stats.writes += 1
+        self.stats.write_bytes += len(data)
+
+    def fsync(self) -> None:
+        self.stats.fsyncs += 1
+        self._inner.fsync()
+
+    def size(self) -> int:
+        return self._inner.size()
+
+    def truncate(self, size: int) -> None:
+        self._inner.truncate(size)
+
+    def close(self) -> None:
+        self._inner.close()
 
 
 # ===========================================================================
