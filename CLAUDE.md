@@ -78,8 +78,22 @@ untouched.)
 - **L0 — Clock, Disk, harness, KVStore interface: DONE.** `harness.py` +
   `tests/test_l0.py`, 17/17 green. This was bench setup (no DB fundamentals), so
   the plumbing blanks (`SimClock`, `KVStore` ABC) were filled in directly.
-- **L1 — Append-only log + in-memory hash index: NEXT.** This is where the real
-  database learning starts: the record format (length-prefixed via `struct`),
-  `append` through the injected `Disk`, an in-memory hash index of key→offset,
-  rebuild-on-open. First real fault = the **torn write** (truncate the last record
-  via `SimDisk.tear_next_write_at`). The user implements these — they're load-bearing.
+- **L1 — Append-only log + in-memory hash index: DONE.** `logstore.py` +
+  `tests/test_logstore.py`, green. Record format, `append`, hash index,
+  rebuild-on-open, torn-write recovery (incl. the torn-tail-no-resurrect contract).
+- **L2 — Memtable + SSTable + WAL: restructured into three incremental rungs**
+  (each green before the next, red-test-first; the original all-at-once L2 scaffold
+  was deleted). Lessons in the vault: `L2.1-sstable.md`, `L2.2-memtable-flush-merge.md`,
+  `L2.3-wal-durability.md`.
+  - **L2.1 — SSTable (standalone): NEXT.** `sstable.py` scaffold in place; the two
+    blanks (`SSTableWriter.write_all`, `SSTableReader.get`) are the user's. The user
+    writes `tests/test_sstable.py` FIRST — a *counted-metric* test (sparse index
+    resolves N keys with ≪ N resident entries) plus edge cases (single-record table,
+    binary-search underflow). No engine/WAL yet.
+  - **L2.2 — memtable + flush + merged read (no durability):** future. Adds
+    `lsmstore.py` (engine over `sstable.py`), a Disk read-counter in `harness.py`
+    (Claude's plumbing — count read-amplification), and ends on a deliberate red
+    crash test. Provenance tests pin *which* sub-piece answered.
+  - **L2.3 — WAL durability:** future. L1's log demoted to a durability buffer:
+    WAL-first ordering, tombstone-preserving replay (don't resurrect deletes),
+    truncate-on-flush.
