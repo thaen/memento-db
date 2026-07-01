@@ -1,0 +1,147 @@
+.......xxF                                                               [100%]
+=================================== FAILURES ===================================
+_______________________ test_engine_matches_a_dict_model _______________________
+
+    @given(ops=st.lists(Op, max_size=60))
+>   def test_engine_matches_a_dict_model(ops):
+                   ^^^
+
+tests/test_engine.py:179: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_engine.py:193: in test_engine_matches_a_dict_model
+    assert db.get(probe) == model.get(probe)
+           ^^^^^^^^^^^^^
+lsmstore.py:102: in get
+    candidate = sstable.get(key) or None
+                ^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <sstable.SSTableReader object at 0x106d1d370>, key = b'\x00'
+
+    def get(self, key: bytes) -> Optional[Record]:
+        """Return the Record for `key` (possibly a tombstone), or None if this
+        SSTable does not contain the key at all.
+    
+        Note the return type: a Record that may be a tombstone, NOT Optional[bytes].
+        "absent here" (None) and "present but deleted" (tombstone Record) are
+        different answers -- a later merge across SSTables needs to tell them apart.
+        """
+        # === YOUR CODE (Exercise 2.1.2) ===
+        # 1. Binary-search self._index for the largest indexed key <= `key`.
+        #    That gives the data offset to start scanning from. If `key` is
+        #    smaller than every indexed key, it can't be here -> return None.
+        # 2. Scan forward record-by-record from that offset (read the block
+        #    self.disk.read(start, self._data_end - start) once and walk it with
+        #    decode_record_at) until:
+        #       - rec.key == key  -> return rec  (tombstone or not)
+        #       - rec.key  > key  -> not present -> return None
+        #       - you reach self._data_end -> return None
+        pml(f"eval'ing index {self._index} to see if we might have key {key}")
+        if not self._index:
+            return None
+        if key < self._index[0][0]:
+            # key is lower than we store.
+            return None
+    
+        idx = self.floor_index_for_key(key)
+        if idx == None:
+            return None
+        pml(f"  floor idx: {idx}")
+    
+>       start_key, offset = self._index[idx]
+                            ^^^^^^^^^^^^^^^^
+E       IndexError: list index out of range
+E       Falsifying example: test_engine_matches_a_dict_model(
+E           ops=[('delete', b'\x00', b''),
+E            ('delete', b'\x02', b''),
+E            ('delete', b'\x00\x00\x00', b''),
+E            ('put', b'\x01', b''),
+E            ('put', b'\x00\x00', b''),
+E            ('flush', b'', b'')],
+E       )
+
+sstable.py:246: IndexError
+----------------------------- Captured stdout call -----------------------------
+factory: known stores {}
+finding b'\x00'
+  found in memory Record(key=b'\x00', value=b'', tombstone=True)
+finding b'\x00'
+  found in memory Record(key=b'\x00', value=b'', tombstone=True)
+finding b'\x02'
+  found in memory Record(key=b'\x02', value=b'', tombstone=True)
+finding b'\x00'
+  found in memory Record(key=b'\x00', value=b'', tombstone=True)
+finding b'\x00\x00\x00'
+  found in memory Record(key=b'\x00\x00\x00', value=b'', tombstone=True)
+finding b'\x00'
+  found in memory Record(key=b'\x00', value=b'', tombstone=True)
+finding b'\x01'
+  found in memory Record(key=b'\x01', value=b'', tombstone=False)
+finding b'\x00'
+  found in memory Record(key=b'\x00', value=b'', tombstone=True)
+finding b'\x00\x00'
+  found in memory Record(key=b'\x00\x00', value=b'', tombstone=False)
+finding b'\x00'
+  found in memory Record(key=b'\x00', value=b'', tombstone=True)
+factory: known stores {'sst-0': <harness.SimDisk object at 0x106d06360>}
+writing {b'\x00': Record(key=b'\x00', value=b'', tombstone=True), b'\x02': Record(key=b'\x02', value=b'', tombstone=True), b'\x00\x00\x00': Record(key=b'\x00\x00\x00', value=b'', tombstone=True), b'\x01': Record(key=b'\x01', value=b'', tombstone=False), b'\x00\x00': Record(key=b'\x00\x00', value=b'', tombstone=False)} to disk sst-0
+SST: write_all
+SST:  0 writing Record(key=b'\x00', value=b'', tombstone=True)
+SST:  1 writing Record(key=b'\x00\x00', value=b'', tombstone=False)
+SST:  2 writing Record(key=b'\x00\x00\x00', value=b'', tombstone=True)
+SST:  3 writing Record(key=b'\x01', value=b'', tombstone=False)
+SST:  4 writing Record(key=b'\x02', value=b'', tombstone=True)
+SST: wrote data to offset 53, now creating index region.
+SST: buffer now contains the data plus index region, to offset 79. let's write the footer.
+SST: buffer now contains data, idx, footer, len 99. writing.
+finding b''
+  looking on disk
+SST: eval'ing index [(b'\x00', 0), (b'\x02', 43)] to see if we might have key b''
+  found candidate None
+finding b'\x00'
+  looking on disk
+SST: eval'ing index [(b'\x00', 0), (b'\x02', 43)] to see if we might have key b'\x00'
+SST:   floor idx: 43
+factory: known stores {}
+finding b'\x00'
+  found in memory Record(key=b'\x00', value=b'', tombstone=True)
+finding b'\x00'
+  found in memory Record(key=b'\x00', value=b'', tombstone=True)
+finding b'\x02'
+  found in memory Record(key=b'\x02', value=b'', tombstone=True)
+finding b'\x00'
+  found in memory Record(key=b'\x00', value=b'', tombstone=True)
+finding b'\x00\x00\x00'
+  found in memory Record(key=b'\x00\x00\x00', value=b'', tombstone=True)
+finding b'\x00'
+  found in memory Record(key=b'\x00', value=b'', tombstone=True)
+finding b'\x01'
+  found in memory Record(key=b'\x01', value=b'', tombstone=False)
+finding b'\x00'
+  found in memory Record(key=b'\x00', value=b'', tombstone=True)
+finding b'\x00\x00'
+  found in memory Record(key=b'\x00\x00', value=b'', tombstone=False)
+finding b'\x00'
+  found in memory Record(key=b'\x00', value=b'', tombstone=True)
+factory: known stores {'sst-0': <harness.SimDisk object at 0x106d1cda0>}
+writing {b'\x00': Record(key=b'\x00', value=b'', tombstone=True), b'\x02': Record(key=b'\x02', value=b'', tombstone=True), b'\x00\x00\x00': Record(key=b'\x00\x00\x00', value=b'', tombstone=True), b'\x01': Record(key=b'\x01', value=b'', tombstone=False), b'\x00\x00': Record(key=b'\x00\x00', value=b'', tombstone=False)} to disk sst-0
+SST: write_all
+SST:  0 writing Record(key=b'\x00', value=b'', tombstone=True)
+SST:  1 writing Record(key=b'\x00\x00', value=b'', tombstone=False)
+SST:  2 writing Record(key=b'\x00\x00\x00', value=b'', tombstone=True)
+SST:  3 writing Record(key=b'\x01', value=b'', tombstone=False)
+SST:  4 writing Record(key=b'\x02', value=b'', tombstone=True)
+SST: wrote data to offset 53, now creating index region.
+SST: buffer now contains the data plus index region, to offset 79. let's write the footer.
+SST: buffer now contains data, idx, footer, len 99. writing.
+finding b''
+  looking on disk
+SST: eval'ing index [(b'\x00', 0), (b'\x02', 43)] to see if we might have key b''
+  found candidate None
+finding b'\x00'
+  looking on disk
+SST: eval'ing index [(b'\x00', 0), (b'\x02', 43)] to see if we might have key b'\x00'
+SST:   floor idx: 43
+=========================== short test summary info ============================
+FAILED tests/test_engine.py::test_engine_matches_a_dict_model - IndexError: l...
+1 failed, 7 passed, 2 xfailed in 0.08s

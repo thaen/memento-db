@@ -50,6 +50,15 @@ def test_binary_search():
     assert tr.floor_index_for_key(b"extant") == 4
     assert tr.floor_index_for_key(b"zillion") == 4
 
+    tr = SSTableReader(SimDisk())
+    tr._index = [(b"alpha", 1),
+                 (b"beta", 3)]
+    assert tr.floor_index_for_key(b"aardvark") == None
+    assert tr.floor_index_for_key(b"alpha") == 0
+    assert tr.floor_index_for_key(b"avatar") == 0
+    assert tr.floor_index_for_key(b"beta") == 1
+    assert tr.floor_index_for_key(b"zeta") == 1
+
 def test_all_keys_resolve_with_a_sparse_index():
     """The point of L2.1: an SSTable answers N lookups while keeping FAR FEWER
     than N index entries resident -- unlike L1's one-entry-per-key hash index."""
@@ -174,3 +183,19 @@ def test_missing_key_in_a_gap_returns_none():
     reader = build(disk, [Record(b"a", b"1"), Record(b"c", b"2"), Record(b"e", b"3")])
     assert reader.get(b"d") is None
     assert reader.get(b"b") is None
+
+
+def test_missing_key_in_a_full_non_last_block_returns_none():
+    """RED (regression): a missing key that floors into a NON-LAST sparse block that
+    is EXACTLY full (SPARSE_EVERY records) must return None, not crash.
+
+    With SPARSE_EVERY=4, keys a..h index at 'a' (offset 0) and 'e'. 'cc' floors into
+    the first block [a,b,c,d]; after decoding 'd' the scan offset equals the block
+    length exactly. The current scan (`off > len(chunk)`, no `rec.key > key` stop,
+    last-block chunk sized by disk.size()) decodes one record past the block and
+    raises struct.error here. The gap/above tests above miss it because their tiny
+    tables land in the LAST block, where the alignment happens not to fault."""
+    disk = SimDisk()
+    reader = build(disk, [Record(bytes([c]), b"v") for c in b"abcdefgh"])
+    assert [k for k, _ in reader._index] == [b"a", b"e"]   # 'cc' floors into block #0
+    assert reader.get(b"cc") is None

@@ -65,7 +65,7 @@ _IDX = struct.Struct("<IQ")            # klen, offset  (key bytes follow)
 DEBUG = True
 def pml(msg):
     if DEBUG:
-        print(msg)
+        print(f"SST: {msg}")
 
 # ---------------------------------------------------------------------------
 # WRITER  (Exercise 2.1.1)
@@ -178,12 +178,15 @@ class SSTableReader:
         # given a key we know to be in the range of keys we might have,
         # find the offset to start scanning forward from.
 
-        if len(self._index) < 3:
-            # binary search unnecesary.
-            # find the first index lower than the key
-            for item in reversed(self._index):
-                if key <= item[0]:
-                    return item[1]
+        if len(self._index) == 0:
+            return None
+        elif len(self._index) == 1:
+            return 0
+        elif len(self._index) == 2:
+            if key >= self._index[1][0]:
+                return 1
+            if key >= self._index[0][0]:
+                return 0
 
         # binary search now.
         left = 0
@@ -241,24 +244,25 @@ class SSTableReader:
         idx = self.floor_index_for_key(key)
         if idx == None:
             return None
+        pml(f"  floor idx: {idx}")
 
         start_key, offset = self._index[idx]
-        pml(f"will start scan at {start_key} at offset {offset}")
+        pml(f"  will start scan at {start_key} at offset {offset}")
             
         # read this offset to the next one (or the end)
         if idx+1 >= len(self._index):
             chunk_size = self.disk.size() - offset
         else:
             chunk_size = self._index[idx+1][1] - offset
-        pml(f"reading chunk from offset above of length {chunk_size}")
+        pml(f"  reading chunk from offset above of length {chunk_size}")
         chunk = self.disk.read(offset, chunk_size)
-        pml(f"{chunk}")
+        pml(f"  {chunk}")
 
         off = 0
         while True:
-            if off > len(chunk):
+            if off >= len(chunk):
                 return None
-            pml(f"read chunk offset {off}")
+            pml(f"  read chunk offset {off}")
             record, off = decode_record_at(chunk, off)
             pml(f"found {record}")
             if record and record.key == key:

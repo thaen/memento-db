@@ -14,6 +14,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Iterator, Protocol, runtime_checkable
 
+DEBUG = True
+def pml(msg):
+    if DEBUG:
+        print(msg)
 
 # ===========================================================================
 # Clock
